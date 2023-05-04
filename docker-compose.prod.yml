@@ -1,0 +1,70 @@
+version: "3"
+
+services:
+    webserver:
+        volumes:
+            - ./dags:/usr/local/airflow/dags
+            # Uncomment to include custom plugins
+            - ./plugins:/usr/local/airflow/plugins
+            # Main scripts
+            - ./nfl-application:/usr/local/airflow/nfl-application
+            # mount utils scripts
+            - ./utils:/usr/local/airflow/utils
+            # Selenium downloads
+            - downloads:/usr/local/airflow/downloads
+            # Reporting outputs
+            - outputs:/usr/local/airflow/outputs  
+
+    scheduler:
+        volumes:
+            - ./dags:/usr/local/airflow/dags
+            # Uncomment to include custom plugins
+            - ./plugins:/usr/local/airflow/plugins
+            # Main scripts
+            - ./nfl-application:/usr/local/airflow/nfl-application
+            # mount utils scripts
+            - ./utils:/usr/local/airflow/utils
+            # Selenium downloads
+            - downloads:/usr/local/airflow/downloads
+            # Reporting outputs
+            - outputs:/usr/local/airflow/outputs
+
+    worker:
+        volumes:
+            - ./dags:/usr/local/airflow/dags
+            # Mount the host docker socket on the worker container
+            - /var/run/docker.sock:/var/run/docker.sock
+            # Uncomment to include custom plugins
+            - ./plugins:/usr/local/airflow/plugins
+            # Main scripts
+            - ./nfl-application:/usr/local/airflow/nfl-application
+            # Selenium downloads
+            - downloads:/usr/local/airflow/downloads
+            # Reporting outputs
+            - outputs:/usr/local/airflow/outputs
+            # mount utils scripts
+            - ./utils:/usr/local/airflow/utils
+
+    selenium:
+        volumes:
+            # Selenium downloads
+            - downloads:/home/seluser/downloads
+            # Use the hosts shared memory to avoid the browser crashing inside a docker container
+            - /dev/shm:/dev/shm
+
+    postgres:
+        volumes:
+            - airflowpgdata:/var/lib/postgresql/data/pgdata
+
+volumes:
+  downloads:
+    name: downloads
+    external: true
+
+  outputs:
+    name: outputs
+    external: true
+
+  airflowpgdata:
+    name: airflowpgdata
+    external: true

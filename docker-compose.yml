@@ -1,0 +1,172 @@
+version: "3"
+services:
+    redis:
+        image: redis:latest
+        restart: always
+        container_name: airflow_redis
+        # command: redis-server --requirepass redispass
+
+    postgres:
+        image: postgres:14.1
+        restart: always
+        container_name: airflow_postgres
+        environment:
+            - POSTGRES_USER=airflow
+            - POSTGRES_PASSWORD=airflow
+            - POSTGRES_DB=airflow
+            # Uncomment these lines to persist data on the local filesystem.
+            - PGDATA=/var/lib/postgresql/data/pgdata
+        volumes:
+            - ./pgdata:/var/lib/postgresql/data/pgdata
+
+    webserver:
+        image: docker_airflow:latest
+        build:
+            context: .
+            dockerfile: Dockerfile-airflow
+            args:
+              PYTHON_DEPS: MarkupSafe==2.0.1 example==1.1.9
+
+        restart: always
+        container_name: airflow_webserver
+        depends_on:
+            - postgres
+            - redis
+        environment: &airflow-common-env
+            - EXECUTOR=Celery
+            - LOAD_EX=n
+            - FERNET_KEY=USRk7UdOjSTfjgEnwlkCQl4j5tGPlPEhMscv3g3rCtA=
+            - AIRFLOW__WEBSERVER__AUTHENTICATE=True
+            - AIRFLOW__WEBSERVER__AUTH_BACKEND=airflow.contrib.auth.backends.password_auth
+            - _AIRFLOW_WWW_USER_USERNAME=${_AIRFLOW_WWW_USER_USERNAME:-airflow}
+            - _AIRFLOW_WWW_USER_PASSWORD=${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
+            # - POSTGRES_USER=airflow
+            # - POSTGRES_PASSWORD=airflow
+            # - POSTGRES_DB=airflow
+            # - REDIS_PASSWORD=redispass
+        volumes:
+            - ./dags:/usr/local/airflow/dags
+            # Uncomment to include custom plugins
+            - ./plugins:/usr/local/airflow/plugins
+            # Main scripts
+            - ./nfl-application:/usr/local/airflow/nfl-application
+            # mount utils scripts
+            - ./utils:/usr/local/airflow/utils
+            # Selenium downloads
+            - ./downloads:/usr/local/airflow/downloads
+            # Reporting outputs
+            - ./outputs:/usr/local/airflow/outputs
+        ports:
+            - 8080:8080
+        command: webserver
+        healthcheck:
+            test: ["CMD-SHELL", "[ -f /usr/local/airflow/airflow-webserver.pid ]"]
+            interval: 30s
+            timeout: 30s
+            retries: 3
+
+    flower:
+        image: docker_airflow:latest
+        restart: always
+        container_name: airflow_flower
+        depends_on:
+            - redis
+        environment:
+            - EXECUTOR=Celery
+            # - REDIS_PASSWORD=redispass
+        healthcheck:
+            test: ["CMD-SHELL", "[ -f /usr/local/airflow/airflow-flower.pid ]"]
+            interval: 30s
+            timeout: 30s
+            retries: 3
+        ports:
+            - "5555:5555"
+        command: flower
+
+    scheduler:
+        image: docker_airflow:latest
+        restart: always
+        container_name: airflow_scheduler
+        depends_on:
+            - webserver
+        volumes:
+            - ./dags:/usr/local/airflow/dags
+            # Uncomment to include custom plugins
+            - ./plugins:/usr/local/airflow/plugins
+            # Selenium scripts
+            - ./selenium_scripts:/usr/local/airflow/selenium_scripts
+            # mount utils scripts
+            - ./utils:/usr/local/airflow/utils
+            # Selenium downloads
+            - ./downloads:/usr/local/airflow/downloads
+            # Reporting outputs
+            - ./outputs:/usr/local/airflow/outputs
+        environment:
+            - EXECUTOR=Celery
+            - LOAD_EX=n
+            - FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
+            # - POSTGRES_USER=airflow
+            # - POSTGRES_PASSWORD=airflow
+            # - POSTGRES_DB=airflow
+            # - REDIS_PASSWORD=redispass
+        command: scheduler
+
+    worker:
+        image: docker_airflow:latest
+        restart: always
+        container_name: airflow_worker
+        depends_on:
+            - scheduler
+        volumes:
+            - ./dags:/usr/local/airflow/dags
+            # Mount the host docker socket on the worker container
+            - /var/run/docker.sock:/var/run/docker.sock
+            # Uncomment to include custom plugins
+            - ./plugins:/usr/local/airflow/plugins
+            # Main scripts
+            - ./nfl-application:/usr/local/airflow/nfl-application
+            # Selenium downloads
+            - ./downloads:/usr/local/airflow/downloads
+            # Reporting outputs
+            - ./outputs:/usr/local/airflow/outputs
+            # mount utils scripts
+            - ./utils:/usr/local/airflow/utils
+        env_file:
+            - .env
+        environment:
+            - EXECUTOR=Celery
+            - FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
+            # - POSTGRES_USER=airflow
+            # - POSTGRES_PASSWORD=airflow
+            # - POSTGRES_DB=airflow
+            # - REDIS_PASSWORD=redispass
+        networks:
+            - default
+        command: worker
+
+    selenium:
+        image: docker_selenium:latest
+        build:
+            context: .
+            dockerfile: Dockerfile-selenium
+        restart: always
+        container_name: airflow_selenium
+        volumes:
+            # Selenium downloads
+            - ./downloads:/home/seluser/downloads
+            # Use the hosts shared memory to avoid the browser crashing inside a docker container
+            - /dev/shm:/dev/shm
+        ports:
+            - "4442:4442"
+            - "4443:4443"
+            - "4444:4444"
+        networks:
+            - default
+            - postgres_bridge
+
+networks:
+    default:
+
+    postgres_bridge:
+        name: postgres_bridge
+        external: true
